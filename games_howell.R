@@ -15,58 +15,86 @@ library(rcompanion)
 library(ggsignif)
 library(openxlsx)
 library(PMCMRplus)
+library(writexl)
 
-# 必要なパッケージ
-if (!requireNamespace("ggplot2", quietly = TRUE)) install.packages("ggplot2")
-library(ggplot2)
+df <- read.csv("a.csv",header = T)
+df$X <- factor(df$X, levels = c())  # 順序を指定
+head(df)
+tail(df)
+str(df)
+
+# 正規性検定（Shapiro-Wilk検定）
+shapiro_results <- df %>%
+  group_by(X) %>% 
+  summarise(
+    Y_p = shapiro.test(Y)$p.value
+  )
+shapiro_results
+
+write_xlsx(list("Shapiro Results" = shapiro_results), "shapiro_results.xlsx")
+
+# 等分散性検定（Levene検定）
+levene_Y <- leveneTest(Y ~ X, data = df, center = median)
+levene_Y
+write_xlsx(list("Leven Result" = levene_Y), "leven_result.xlsx")
+
+# Games-Howell 検定
+gh_test <- gamesHowellTest(Y ~ X, data = df)
+gh_test
+# p値行列の取得
+p_values <- as.matrix(gh_test$p.value)
+
+# p値行列の実際の行・列名を取得
+group_names <- rownames(p_values)
+
+# p_values の行・列名を設定
+rownames(p_values) <- colnames(p_values) <- group_names
+
+# 有意差のグループ分け（アルファベット表記）
+cld_result <- multcompLetters(p_values, threshold = 0.05)
+
+# 結果の表示
+print(cld_result$Letters)
+
 
 # 有意差検定の結果（multcompLetters）のラベルを取得
 group_letters <- cld_result$Letters
-group_levels <- levels(df$Group)
+group_levels <- levels(df$X)
 
-# グループ A にラベルがなければ "a" を付与
+# X の各グループに対して、ラベルを補完（もし抜けていたら "a" を付ける）
 for (g in group_levels) {
   if (!(g %in% names(group_letters))) {
     group_letters[g] <- "a"
   }
 }
 
-# 確認
-print(group_letters)
-
-# X軸のグループ名を A, B, ..., I に変更
-group_labels <- setNames(LETTERS[1:9], group_levels)
-
 # データフレームにラベルを追加
-df$group_label <- group_letters[df$Group]
+df$group_label <- group_letters[df$X]
 
-# ボックスプロットの作成（凡例を削除）
-ggplot(df, aes(x = Group, y = Value, fill = Group)) +
-  geom_boxplot() +
+ggplot(df, aes(x = X, y = Y)) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.7, aes(fill = X)) +  # X群ごとにボックスの色を変更
+  geom_beeswarm(aes(color = X), size = 2, alpha = 0.8) +  # X群ごとにドットの色を変更
   stat_summary(fun = mean, geom = "point", shape = 23, size = 3, fill = "white") +  # 平均値の表示
-  geom_text(aes(x = Group, y = max(Value) + 1, label = group_label),  # 最大値+1 の位置にラベルを配置
-            color = "black", size = 6, fontface = "bold") +
-  theme_minimal() +
+  geom_text(aes(x = X, y = max(Y) + 4.5, label = group_label),  
+            color = "black", size = 3, fontface = "bold") +
+  theme_minimal() + theme_classic2() +
+  ggtitle("practice") +
+  theme(plot.title = element_text(hjust = 0.5, size = 20, face = "bold")) +
   
-  # タイトルの設定
-  ggtitle("Comparison of Groups") +
-  theme(plot.title = element_text(hjust = 0.5, size = 22, face = "bold")) +  # タイトルを中央揃え・サイズ22
+  scale_x_discrete(labels = c("A" = "WT", "B" = "sep", "C" = "dou")) +
+  theme(axis.text.x = element_text(size = 20), axis.title.x = element_blank()) +
   
-  # X軸の調整
-  scale_x_discrete(labels = group_labels) +  # X軸のラベルを A, B, ... I に変更
-  theme(axis.text.x = element_text(size = 20),  # X軸のラベルサイズを 20 に
-        axis.title.x = element_blank()) +  # X軸のタイトルを削除
+  ylab("Title") +
+  ylim(0, 55) + 
+  theme(axis.title.y = element_text(size = 20), axis.text.y = element_text(size = 18)) +
   
-  # Y軸の調整
-  ylab("Length (cm)") +  # Y軸のタイトル
-  theme(axis.title.y = element_text(size = 20),  # Y軸のタイトルサイズを 20
-        axis.text.y = element_text(size = 18)) +  # Y軸の数値サイズを 18
+  annotate("text", 
+           x = max(as.numeric(df$X)), y = 0,  
+           label = "Games-Howell test\nSignificance level: 0.05", 
+           size =1.5, hjust = .5, vjust = 1) +
+  theme(legend.position = "none") +
   
-  # 右下に「Games-Howell test」「有意水準」を記入
-  annotate("text", x = 8, y = min(df$Value), label = "Games-Howell test\nSignificance level: 0.05", 
-           size = 5, hjust = 1, vjust = 0, fontface = "italic") +
-  
-  # 凡例を削除
-  theme(legend.position = "none")
+  scale_fill_manual(values = c("A" = "lightblue", "B" = "pink", "C" = "lightgreen")) +  # ボックスの色を手動で変更
+  scale_color_manual(values = c("A" = "blue", "B" = "red", "C" = "green"))  # ドットの色を手動で変更
 
                                                                                                                                                                                                                                                                                        +     )                     
